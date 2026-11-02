@@ -1,0 +1,44 @@
+# Módulo de Autenticación: su propia base de datos (PostgreSQL) + la API.
+#   Solo la BD (para correr la API desde el IDE):  docker compose up -d auth-db
+#   Todo dockerizado:                              docker compose up -d --build
+# Los secretos salen del archivo .env (copia .env.example). Nunca van en git ni en la imagen.
+services:
+  auth-db:
+    image: postgres:16-alpine
+    container_name: auth-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-auth_db}
+      POSTGRES_USER: ${DB_USER:-auth_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en el archivo .env}
+    ports:
+      - "${DB_PORT:-5435}:5432"          # 5432/5433/5434 ya los usan Materias, Estudiantes e Inscripciones
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-auth_user} -d ${DB_NAME:-auth_db}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  auth-service:
+    build: .
+    image: auth-service:local
+    container_name: auth-service
+    restart: unless-stopped
+    depends_on:
+      auth-db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://auth-db:5432/${DB_NAME:-auth_db}   # dentro de la red de compose: puerto 5432
+      DB_USER: ${DB_USER:-auth_user}
+      DB_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en el archivo .env}
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en el archivo .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Define ADMIN_PASSWORD en el archivo .env}
+    ports:
+      - "8083:8083"
+
+volumes:
+  auth_db_data:
